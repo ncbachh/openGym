@@ -463,7 +463,10 @@ export default function Stats() {
       </div>
 
       <div className="card">
-        <h2>{t('Exercise progress')}</h2>
+        <div className="row between" style={{ marginBottom: 8 }}>
+          <h2 style={{ margin: 0 }}>{t('Exercise progress')}</h2>
+          <Button size="sm" icon="list" onClick={() => nav('/library')}>{t('Exercises')}</Button>
+        </div>
         {exHist.length ? <>
           <div className="sect-b" style={{ marginBottom: 10 }}>
             <SelectRow title={t('Exercise')} sheetTitle={t('Exercise progress')} value={curEx} onChange={setExId} stackedValue
