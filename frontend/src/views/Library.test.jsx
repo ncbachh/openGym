@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 // Favourites (issue #6): the Library floats starred exercises to the top of the current
-// result list — after the search and body-part filters, without reordering the rest.
+// result list — after the search and muscle/equipment filters, without reordering the rest.
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Library from './Library.jsx'
 import { EXDB } from '../lib/exercises.js'
+import { useUI } from '../store/useUI.js'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -31,10 +32,11 @@ function render() {
   act(() => root.render(<Library />))
   return host
 }
-const names = host => [...host.querySelectorAll('.item .tt')].map(el => el.textContent).slice(1)   // drop "Create your own"
+const names = host => [...host.querySelectorAll('.item .tt')].map(el => el.textContent)
 
 beforeEach(() => {
   mocks.S = { unit: 'kg', lang: 'en', routines: [], workouts: [], customEx: [], exWeights: {}, equipProfiles: [], activeEquipId: null, equipFilterOn: false }
+  useUI.setState({ sheets: [] })
   document.body.innerHTML = ''
 })
 afterEach(() => { act(() => { mounted.splice(0).forEach(root => root.unmount()) }) })
@@ -54,15 +56,56 @@ describe('Library favourites', () => {
     expect(rows[2].querySelector('.fav-star')).toBeNull()
   })
 
-  it('keeps a favourite on top inside a body-part filter, but never pulls one in from elsewhere', () => {
+  it('keeps a favourite on top inside a muscle filter, but never pulls one in from elsewhere', () => {
     const chest = EXDB.filter(e => e.bp === 'chest')
     const legs = EXDB.find(e => e.bp !== 'chest')
     mocks.S.favEx = [chest[4].id, legs.id]
     const host = render()
-    const chip = [...host.querySelectorAll('.chips .chip')].find(b => b.textContent === 'chest')
-    act(() => chip.click())
+
+    const muscleBtn = host.querySelectorAll('.filter-btn')[1]
+    expect(muscleBtn.textContent).toContain('All Muscles')
+    act(() => muscleBtn.click())
+
+    const sheet = useUI.getState().sheets.at(-1)
+    expect(sheet).toBeDefined()
+
+    const sheetHost = document.createElement('div')
+    document.body.appendChild(sheetHost)
+    const sheetRoot = createRoot(sheetHost)
+    mounted.push(sheetRoot)
+    act(() => sheetRoot.render(sheet.render(() => useUI.getState().closeSheet(sheet.id))))
+
+    const chestRow = [...sheetHost.querySelectorAll('.lrow')].find(b => b.textContent.toLowerCase().includes('chest'))
+    act(() => chestRow.click())
+
+    const applyBtn = sheetHost.querySelector('.filter-sheet-footer .btn.primary')
+    act(() => applyBtn.click())
+
     const shown = names(host)
     expect(shown[0]).toBe(chest[4].n)
     expect(shown).not.toContain(legs.n)
+    expect(muscleBtn.textContent).toContain('Chest')
+  })
+
+  it('supports equipment filter with multi-select and Clear Filters', () => {
+    const host = render()
+    const eqBtn = host.querySelectorAll('.filter-btn')[0]
+    expect(eqBtn.textContent).toContain('All Equipment')
+    act(() => eqBtn.click())
+
+    const sheet = useUI.getState().sheets.at(-1)
+    const sheetHost = document.createElement('div')
+    document.body.appendChild(sheetHost)
+    const sheetRoot = createRoot(sheetHost)
+    mounted.push(sheetRoot)
+    act(() => sheetRoot.render(sheet.render(() => useUI.getState().closeSheet(sheet.id))))
+
+    const barbellRow = [...sheetHost.querySelectorAll('.lrow')].find(b => b.textContent.toLowerCase().includes('barbell'))
+    act(() => barbellRow.click())
+
+    const applyBtn = sheetHost.querySelector('.filter-sheet-footer .btn.primary')
+    act(() => applyBtn.click())
+
+    expect(eqBtn.textContent.toLowerCase()).toContain('barbell')
   })
 })

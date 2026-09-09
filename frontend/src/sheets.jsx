@@ -32,11 +32,20 @@ import { buildCompletedWorkout } from './lib/finish-workout.js'
 import { isWarmupRow, hasCompletedWork } from './lib/workout-model.js'
 import { nextUnfinishedUnit } from './lib/supersetFlow.js'
 import { swapActiveExercise } from './lib/active-exercise-swap.js'
-import { useSheetKeyboard, useRevealActiveChip, tappable } from './lib/use-sheet-keyboard.js'
+import { useSheetKeyboard, tappable } from './lib/use-sheet-keyboard.js'
 import { isFav, toggleFav, sortFavouritesFirst } from './lib/favourites.js'
 import { buildSessionEntries } from './lib/session-start.js'
 import { buildCombinedEntries, deriveSessionName } from './lib/session-merge.js'
 import { workoutsOn, backfillStart, backfillEnd, completeBackfill } from './lib/backfill.js'
+import {
+  matchesMuscles,
+  matchesEquipment,
+  getMuscleOptions,
+  getEquipmentOptions,
+  equipmentFilterLabel,
+  muscleFilterLabel
+} from './lib/exercise-filters.js'
+import { openFilterSheet } from './components/FilterSheet.jsx'
 
 const S = () => useStore.getState().S
 const update = (...a) => useStore.getState().update(...a)
@@ -874,30 +883,58 @@ function ExercisePicker({ onPick, close }) {
   const st = useStore(s => s.S)
   const usage = usageMap(st)
   const [q, setQ] = useState('')
-  const [bp, setBp] = useState('')          // '' = all, '★' = chosen, '☆' = favourites, else a body part
-  const [eq, setEq] = useState('')          // '' = any equipment
+  const [muscles, setMuscles] = useState([])
+  const [equipment, setEquipment] = useState([])
   const [showAll, setShowAll] = useState(false)
   const [shown, setShown] = useState(50)
   const [byMuscle, setByMuscle] = useState(false)
   const searchRef = useRef(null)
-  const bpStrip = useRef(null), eqStrip = useRef(null)
   const onSearchFocus = useSheetKeyboard(searchRef)
   const all = allExercises(st)
   const profile = activeProfile(st)
-  const inScope = e => bp === '★' ? usage[e.id] : bp === '☆' ? isFav(st, e.id) : (!bp || e.bp === bp)
-  let base = all.filter(e => inScope(e) && matchExercise(e, q))
-  if (bp === '★') base = [...base].sort((a, b) => (usage[b.id] - usage[a.id]) || exerciseNameFor(a).localeCompare(exerciseNameFor(b)))
-  const eqFiltered = (profile && !showAll) ? base.filter(e => exAvailable(st, e)) : base
-  const eqOpts = equipmentOf(eqFiltered)
-  // Drop the equipment filter if the search narrowed it away, so you never hit a dead end.
-  const eqOn = eqOpts.includes(eq) ? eq : ''
-  // Favourites float to the top of whatever the filters left (issue #6), the rest keeps its order.
-  const f = sortFavouritesFirst(eqOn ? eqFiltered.filter(e => e.eq === eqOn) : eqFiltered, st)
-  const chosenCount = Object.keys(usage).length
-  const favCount = (st.favEx || []).length
-  const special = bp === '★' || bp === '☆'
-  useRevealActiveChip(bpStrip, bp)
-  useRevealActiveChip(eqStrip, eqOn)
+
+  const muscleOptions = useMemo(() => getMuscleOptions(), [])
+  const equipmentOptions = useMemo(() => getEquipmentOptions(all), [all])
+
+  const available = (profile && !showAll) ? all.filter(e => exAvailable(st, e)) : all
+  const filtered = available.filter(e =>
+    matchExercise(e, q) &&
+    matchesMuscles(e, muscles) &&
+    matchesEquipment(e, equipment)
+  )
+  const f = sortFavouritesFirst(filtered, st)
+
+  const openEquipment = () => {
+    openFilterSheet({
+      title: t('Equipment'),
+      options: equipmentOptions,
+      selected: equipment,
+      onApply: val => { setEquipment(val); setShown(50) },
+      countMatching: tempEq => available.filter(e =>
+        matchExercise(e, q) &&
+        matchesMuscles(e, muscles) &&
+        matchesEquipment(e, tempEq)
+      ).length
+    })
+  }
+
+  const openMuscles = () => {
+    openFilterSheet({
+      title: t('Muscles'),
+      options: muscleOptions,
+      selected: muscles,
+      onApply: val => { setMuscles(val); setShown(50) },
+      countMatching: tempM => available.filter(e =>
+        matchExercise(e, q) &&
+        matchesMuscles(e, tempM) &&
+        matchesEquipment(e, equipment)
+      ).length
+    })
+  }
+
+  const eqLabel = equipmentFilterLabel(equipment)
+  const mLabel = muscleFilterLabel(muscles)
+
   if (byMuscle) return <>
     <div className="row between" style={{ marginBottom: 10 }}><h3>{t('Add exercise')}</h3>
       <Button size="sm" variant="ghost" onClick={() => setByMuscle(false)}>{t('All')}</Button>
@@ -920,39 +957,36 @@ function ExercisePicker({ onPick, close }) {
         {showAll ? t('Filter by "{0}"', profile.name) : t('Show all equipment')}
       </button>
     </div>}
-    {/* Changing muscle group keeps the equipment filter: if it still has exercises under the new
-        group the filter stays applied, and if not the eqOn fallback above drops it for this view
-        without forgetting the choice (issue #71). The favourites/chosen chips still clear it —
-        those are cross-body-part views where a stale equipment filter would be confusing. */}
-    <div className="chips" ref={bpStrip} style={{ margin: eqOpts.length > 1 ? '10px 0 6px' : '10px 0' }}>
-      {favCount > 0 && <button className={'chip' + (bp === '☆' ? ' on' : '')} onClick={() => { setBp('☆'); setEq(''); setShown(50) }}><Icon name="starFill" className="fav-star" />{t('Favourites')} ({favCount})</button>}
-      {chosenCount > 0 && <button className={'chip' + (bp === '★' ? ' on' : '')} onClick={() => { setBp('★'); setEq(''); setShown(50) }}><Icon name="starFill" style={{ fontSize: 12, display: 'inline-block', marginRight: 4, verticalAlign: '-1px' }} />{t('Chosen')} ({chosenCount})</button>}
-      <button className={'chip nocap' + (!bp ? ' on' : '')} onClick={() => { setBp(''); setShown(50) }}>{t('All')}</button>
-      {BODYPARTS.map(b => <button key={b} className={'chip' + (bp === b ? ' on' : '')} onClick={() => { setBp(b); setShown(50) }}>{t(b)}</button>)}
+    <div className="filter-grid" style={{ margin: '10px 0' }}>
+      <button
+        type="button"
+        className={'filter-btn' + (equipment.length > 0 ? ' active' : '')}
+        onClick={openEquipment}
+        aria-label={eqLabel}
+      >
+        <span>{eqLabel}</span>
+      </button>
+      <button
+        type="button"
+        className={'filter-btn' + (muscles.length > 0 ? ' active' : '')}
+        onClick={openMuscles}
+        aria-label={mLabel}
+      >
+        <span>{mLabel}</span>
+      </button>
     </div>
-    {eqOpts.length > 1 && <div className="chips" ref={eqStrip} style={{ marginBottom: 10 }}>
-      <button className={'chip nocap' + (!eqOn ? ' on' : '')} onClick={() => { setEq(''); setShown(50) }}>{t('Any equipment')}</button>
-      {eqOpts.map(x => <button key={x} className={'chip' + (eqOn === x ? ' on' : '')} onClick={() => { setEq(x); setShown(50) }}>{t(x)}</button>)}
-    </div>}
     <div className="list">
-      {!special && <div className="item" {...tappable(() => customExSheet(null, ex => onPick(ex), q.trim()))}>
+      <div className="item" {...tappable(() => customExSheet(null, ex => onPick(ex), q.trim()))}>
         <div className="thumb thumb-x"><Icon name="sparkles" /></div>
         <div className="grow"><div className="tt">{t('Create your own exercise')}</div><div className="ss">{t('name + body part, no animation')}</div></div><Icon name="plus" className="chev" />
-      </div>}
+      </div>
       {f.slice(0, shown).map(e => <div key={e.id} className="item" {...tappable(() => onPick(e))}>
         <Thumb ex={e} /><div className="grow"><div className="tt capitalize">{isFav(st, e.id) && <Icon name="starFill" className="fav-star" />}{exerciseNameFor(e)}</div><div className="ss capitalize">{t(e.tg || e.bp)} · {t(e.eq)}</div></div>
-        {/* Accent tag = already in a routine/log ("Chosen"); the yellow star by the name = favourite. */}
         {usage[e.id] && <span className="tag acc"><Icon name="starFill" /></span>}
-        {/* A "+" glyph reads as "add this now" — it used to just open the same detail sheet as
-            tapping the row, so it added nothing until you'd scrolled past the sets/reps config
-            and found the real button. Now it does what it looks like: adds with the default
-            config right away. Tapping the row itself still opens the detail/config sheet, for
-            when you want to set sets/reps before adding. */}
         <button className="iconbtn chev" aria-label={t('Add “{0}”', exerciseNameFor(e))} style={{ padding: 8, margin: -8 }}
           onClick={ev => { ev.stopPropagation(); onPick(e, true) }}><Icon name="plus" /></button>
       </div>)}
-      {f.length === 0 && bp === '★' && <div className="empty">{t('Nothing chosen yet — add exercises and they’ll show up here.')}</div>}
-      {f.length === 0 && bp === '☆' && <div className="empty">{t('No favourites here — tap the star on an exercise to add it.')}</div>}
+      {f.length === 0 && <div className="empty"><div className="ico"><Icon name="magnifier" /></div>{t('No match')}</div>}
     </div>
     {f.length > shown && <><div style={{ height: 8 }} /><Button onClick={() => setShown(s => s + 50)}>{t('Show more')}</Button></>}
   </>

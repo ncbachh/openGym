@@ -80,17 +80,16 @@ describe('exercise picker', () => {
     expect(rows[2].querySelector('.tt .fav-star')).toBeNull()
   })
 
-  it('offers a Favourites chip only when there are favourites, and it filters to them', () => {
+  it('floats favourites to top in exercise picker, respecting active filters', () => {
     exercisePicker(vi.fn())
     let host = renderTop()
-    const chip = h => [...h.querySelectorAll('.chips .chip')].find(b => b.textContent.startsWith('Favourites'))
-    expect(chip(host)).toBeUndefined()
     useUI.setState({ sheets: [] })
-    useStore.setState(s => ({ S: { ...s.S, favEx: [EXDB[5].id, EXDB[9].id] } }))
+    const favExercises = [EXDB[5], EXDB[9]]
+    useStore.setState(s => ({ S: { ...s.S, favEx: favExercises.map(e => e.id) } }))
     exercisePicker(vi.fn())
     host = renderTop()
-    expect(chip(host).textContent).toBe('Favourites (2)')
-    act(() => chip(host).click())
-    expect(names(host)).toEqual([EXDB[5].n, EXDB[9].n])
+    const shown = names(host).slice(1)
+    expect(shown[0]).toBe(favExercises[0].n)
+    expect(shown[1]).toBe(favExercises[1].n)
   })
 })

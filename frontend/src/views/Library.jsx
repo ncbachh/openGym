@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
-import { EXDB, BODYPARTS, allExercises, equipmentOf, matchExercise } from '../lib/exercises.js'
+import { EXDB, allExercises, matchExercise } from '../lib/exercises.js'
 import { MUSCLE_NAME } from '../lib/muscles.js'
 import { activeProfile, exAvailable } from '../lib/equipment.js'
 import { bestWeightFor } from '../lib/history.js'
@@ -11,28 +11,71 @@ import { Thumb } from '../components/Media.jsx'
 import { exerciseDetailSheet, addToRoutineSheet, customExSheet } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
-import { tappable, useRevealActiveChip } from '../lib/use-sheet-keyboard.js'
+import { tappable } from '../lib/use-sheet-keyboard.js'
 import { isFav, sortFavouritesFirst } from '../lib/favourites.js'
+import {
+  matchesMuscles,
+  matchesEquipment,
+  getMuscleOptions,
+  getEquipmentOptions,
+  equipmentFilterLabel,
+  muscleFilterLabel
+} from '../lib/exercise-filters.js'
+import { openFilterSheet } from '../components/FilterSheet.jsx'
 
 export default function Library() {
   const nav = useNavigate()
   const S = useStore(s => s.S)
   const [q, setQ] = useState('')
-  const [bp, setBp] = useState('')
-  const [eq, setEq] = useState('')
+  const [muscles, setMuscles] = useState([])
+  const [equipment, setEquipment] = useState([])
   const [showAll, setShowAll] = useState(false)   // ignore the active equipment profile for this session
   const [shown, setShown] = useState(40)
-  const bpStrip = useRef(null), eqStrip = useRef(null)
+
   const profile = activeProfile(S)
-  const base = allExercises(S).filter(e => (!bp || e.bp === bp) && matchExercise(e, q))
-  const eqFiltered = (profile && !showAll) ? base.filter(e => exAvailable(S, e)) : base
-  const eqOpts = equipmentOf(eqFiltered)
-  // Drop the equipment filter if the search narrowed it away, so you never hit a dead end.
-  const eqOn = eqOpts.includes(eq) ? eq : ''
-  // Favourites float to the top of whatever the filters left (issue #6), the rest keeps its order.
-  const f = sortFavouritesFirst(eqOn ? eqFiltered.filter(e => e.eq === eqOn) : eqFiltered, S)
-  useRevealActiveChip(bpStrip, bp)
-  useRevealActiveChip(eqStrip, eqOn)
+  const all = allExercises(S)
+  const available = (profile && !showAll) ? all.filter(e => exAvailable(S, e)) : all
+
+  const muscleOptions = useMemo(() => getMuscleOptions(), [])
+  const equipmentOptions = useMemo(() => getEquipmentOptions(all), [all])
+
+  const filtered = available.filter(e =>
+    matchExercise(e, q) &&
+    matchesMuscles(e, muscles) &&
+    matchesEquipment(e, equipment)
+  )
+  const f = sortFavouritesFirst(filtered, S)
+
+  const openEquipment = () => {
+    openFilterSheet({
+      title: t('Equipment'),
+      options: equipmentOptions,
+      selected: equipment,
+      onApply: val => { setEquipment(val); setShown(40) },
+      countMatching: tempEq => available.filter(e =>
+        matchExercise(e, q) &&
+        matchesMuscles(e, muscles) &&
+        matchesEquipment(e, tempEq)
+      ).length
+    })
+  }
+
+  const openMuscles = () => {
+    openFilterSheet({
+      title: t('Muscles'),
+      options: muscleOptions,
+      selected: muscles,
+      onApply: val => { setMuscles(val); setShown(40) },
+      countMatching: tempM => available.filter(e =>
+        matchExercise(e, q) &&
+        matchesMuscles(e, tempM) &&
+        matchesEquipment(e, equipment)
+      ).length
+    })
+  }
+
+  const eqLabel = equipmentFilterLabel(equipment)
+  const mLabel = muscleFilterLabel(muscles)
 
   return <>
     <div className="hdr">
@@ -41,7 +84,10 @@ export default function Library() {
         <h1>{t('Exercises')}</h1>
         <div className="sub">{t('{0} exercises with animations', EXDB.length)}</div>
       </div>
-      <Button size="sm" variant="tinted" icon="target" onClick={() => nav('/muscles')}>{t('By muscle')}</Button>
+      <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+        <button className="iconbtn" onClick={() => nav('/muscles')} aria-label={t('By muscle')} title={t('By muscle')}><Icon name="target" /></button>
+        <Button size="sm" variant="plain" onClick={() => customExSheet(null, ex => exerciseDetailSheet(ex), q.trim())} style={{ fontWeight: 600, fontSize: 16 }}>{t('Create')}</Button>
+      </div>
     </div>
     <div className="search" style={{ marginBottom: 10 }}><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
       <input className="input" placeholder={t('Search…')} value={q} onChange={e => { setQ(e.target.value); setShown(40) }} /></div>
@@ -52,22 +98,25 @@ export default function Library() {
         {showAll ? t('Filter by "{0}"', profile.name) : t('Show all equipment')}
       </button>
     </div>}
-    {/* Changing body part keeps the equipment filter (issue #71): the eqOn fallback above drops
-        it only for the current view if the new body part has nothing under it, without forgetting
-        the choice. "All" clears it, since it spans every body part. */}
-    <div className="chips" ref={bpStrip} style={{ marginBottom: eqOpts.length > 1 ? 8 : 12 }}>
-      <button className={'chip nocap' + (!bp ? ' on' : '')} onClick={() => { setBp(''); setEq(''); setShown(40) }}>{t('All')}</button>
-      {BODYPARTS.map(b => <button key={b} className={'chip' + (bp === b ? ' on' : '')} onClick={() => { setBp(b); setShown(40) }}>{t(b)}</button>)}
+    <div className="filter-grid">
+      <button
+        type="button"
+        className={'filter-btn' + (equipment.length > 0 ? ' active' : '')}
+        onClick={openEquipment}
+        aria-label={eqLabel}
+      >
+        <span>{eqLabel}</span>
+      </button>
+      <button
+        type="button"
+        className={'filter-btn' + (muscles.length > 0 ? ' active' : '')}
+        onClick={openMuscles}
+        aria-label={mLabel}
+      >
+        <span>{mLabel}</span>
+      </button>
     </div>
-    {eqOpts.length > 1 && <div className="chips" ref={eqStrip} style={{ marginBottom: 12 }}>
-      <button className={'chip nocap' + (!eqOn ? ' on' : '')} onClick={() => { setEq(''); setShown(40) }}>{t('Any equipment')}</button>
-      {eqOpts.map(x => <button key={x} className={'chip' + (eqOn === x ? ' on' : '')} onClick={() => { setEq(x); setShown(40) }}>{t(x)}</button>)}
-    </div>}
     <div className="list">
-      <div className="item" {...tappable(() => customExSheet(null, ex => exerciseDetailSheet(ex), q.trim()))}>
-        <div className="thumb thumb-x"><Icon name="sparkles" /></div>
-        <div className="grow"><div className="tt">{t('Create your own exercise')}</div><div className="ss">{t('name + body part, no animation')}</div></div><Icon name="plus" className="chev" />
-      </div>
       {f.slice(0, shown).map(e => {
         const best = bestWeightFor(S, e.id)
         return <div key={e.id} className="item" {...tappable(() => exerciseDetailSheet(e))}>
@@ -82,4 +131,3 @@ export default function Library() {
     {f.length > shown && <><div style={{ height: 10 }} /><Button onClick={() => setShown(s => s + 40)}>{t('Show more')}</Button></>}
   </>
 }
-
