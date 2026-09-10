@@ -29,6 +29,8 @@ import { Button, Check, NumberField, Row, Switch } from '../components/ui.jsx'
 import Stepper from '../components/Stepper.jsx'
 import Icon from '../components/Icon.jsx'
 import Media from '../components/Media.jsx'
+import ReorderView from '../components/ReorderView.jsx'
+import { reorderRoutineUnit } from './RoutineEdit.jsx'
 
 function EditExerciseNote({ initialNote, initialPin, onSave, close }) {
   const [note, setNote] = useState(initialNote || '')
@@ -90,6 +92,7 @@ export default function WorkoutEdit() {
     }))
   })
   const [dirty, setDirty] = useState(false)
+  const [isReordering, setIsReordering] = useState(false)
 
   if (!originalWorkout) return null
 
@@ -175,14 +178,10 @@ export default function WorkoutEdit() {
     })
   }
 
-  const moveExercise = (entryIdx, direction) => {
-    const targetIdx = entryIdx + direction
-    if (targetIdx < 0 || targetIdx >= entries.length) return
+  const handleReorder = (sourceIndex, targetSlot) => {
     setEntries(prev => {
-      const copy = [...prev]
-      const temp = copy[entryIdx]
-      copy[entryIdx] = copy[targetIdx]
-      copy[targetIdx] = temp
+      const copy = prev.map(e => ({ ...e, sets: [...e.sets] }))
+      reorderRoutineUnit(copy, sourceIndex, targetSlot)
       return copy
     })
     setDirty(true)
@@ -314,6 +313,17 @@ export default function WorkoutEdit() {
 
   const totalSets = entries.reduce((acc, e) => acc + (e.sets?.length || 0), 0)
   const doneSets = entries.reduce((acc, e) => acc + (e.sets?.filter(s => s.done).length || 0), 0)
+
+  if (isReordering) {
+    return (
+      <ReorderView
+        title={t('Reorder exercises')}
+        entries={entries}
+        onReorder={handleReorder}
+        onDone={() => setIsReordering(false)}
+      />
+    )
+  }
 
   return (
     <div className="narrow">
@@ -531,8 +541,7 @@ export default function WorkoutEdit() {
               { icon: 'history', label: t('History'), onClick: () => exerciseHistorySheet(entry.id) },
               { icon: 'flame', label: t('Add warm-up set'), onClick: () => addWarmup(entryIdx) },
               { icon: 'shuffle', label: t('Swap exercise'), onClick: () => swapExercise(entryIdx) },
-              { icon: 'chevronUp', label: t('Move up'), onClick: () => moveExercise(entryIdx, -1), disabled: entryIdx <= 0 },
-              { icon: 'chevronDown', label: t('Move down'), onClick: () => moveExercise(entryIdx, 1), disabled: entryIdx >= entries.length - 1 },
+              { icon: 'list', label: t('Reorder exercises'), onClick: () => setIsReordering(true) },
               { icon: 'trash', label: t('Remove exercise'), onClick: () => removeExercise(entryIdx), danger: true },
             ],
           })

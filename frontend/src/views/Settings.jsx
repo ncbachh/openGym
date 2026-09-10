@@ -465,7 +465,7 @@ function WorkoutControlsSheet() {
       <Row icon="link" iconTint="var(--blue)" title={t('Superset buttons in the exercise header')}>
         <Switch checked={wc.pairButtons} onChange={v => set('pairButtons', v)} />
       </Row>
-      <Row icon="shuffle" iconTint="var(--teal)" title={t('Move, swap and remove buttons below the exercise')}>
+      <Row icon="shuffle" iconTint="var(--teal)" title={t('Swap and remove buttons below the exercise')}>
         <Switch checked={wc.exerciseButtons} onChange={v => set('exerciseButtons', v)} />
       </Row>
     </Section>

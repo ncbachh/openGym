@@ -161,4 +161,48 @@ describe('WorkoutEdit view', () => {
     renderEdit('nonexistent-id')
     expect(container.querySelector('[data-testid="history-view"]')).not.toBeNull()
   })
+
+  it('opens reorder view from More menu and returns on Done', async () => {
+    const multiWorkout = structuredClone(testWorkout)
+    multiWorkout.entries.push({
+      id: '0002',
+      target: { mode: 'reps' },
+      sets: [{ w: 60, r: 10, done: true }],
+    })
+    useStore.setState({
+      S: {
+        ...DEF,
+        workouts: [multiWorkout],
+      },
+      user: null,
+    })
+    renderEdit('w-test')
+
+    const moreBtn = container.querySelector('button[aria-label="More"]')
+    expect(moreBtn).not.toBeNull()
+    act(() => {
+      moreBtn.click()
+    })
+
+    const sheets = await import('../sheets.jsx')
+    const menu = sheets.menuSheet.mock.calls.at(-1)[0]
+    const reorderItem = menu.items.find(it => it.label === 'Reorder exercises')
+    expect(reorderItem).toBeTruthy()
+
+    act(() => {
+      reorderItem.onClick()
+    })
+
+    expect(container.querySelector('h1')?.textContent).toBe('Reorder exercises')
+    expect(container.querySelectorAll('.routine-drag-row').length).toBe(2)
+
+    const doneBtn = [...container.querySelectorAll('button')].find(b => b.textContent.trim() === 'Done')
+    expect(doneBtn).toBeTruthy()
+    act(() => {
+      doneBtn.click()
+    })
+
+    expect(container.querySelector('h1')).toBeNull()
+    expect(container.querySelector('input[placeholder="Workout name"]')).not.toBeNull()
+  })
 })

@@ -6,7 +6,7 @@ import { exOr } from '../lib/exercises.js'
 import { activeProfile, exAvailable } from '../lib/equipment.js'
 import { uid } from '../lib/format.js'
 import { t, exerciseNameFor } from '../lib/i18n.js'
-import { supersetUnits, moveSupersetUnit, cleanupSg, exLine, defaultConfig } from '../lib/history.js'
+import { supersetUnits, cleanupSg, exLine, defaultConfig } from '../lib/history.js'
 import { Thumb } from '../components/Media.jsx'
 import { glyphPicker, exercisePicker, exConfigSheet, confirmSheet } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
@@ -82,7 +82,7 @@ function autoScrollStep(host, clientY) {
   return 0
 }
 
-function useRoutineReorder(routineIdentity, exercises, onDrop) {
+export function useRoutineReorder(routineIdentity, exercises, onDrop) {
   const listRef = useRef(null)
   const gestureRef = useRef(null)
   const exercisesRef = useRef(exercises)
@@ -221,8 +221,12 @@ function useRoutineReorder(routineIdentity, exercises, onDrop) {
         listIdentity: exercisesRef.current,
         snapshot: JSON.stringify(exercisesRef.current), active: false, timer: null,
       }
-      gesture.timer = window.setTimeout(() => lift(gesture), ROUTINE_LONG_PRESS_MS)
       gestureRef.current = gesture
+      if (target.closest('[data-drag-handle]')) {
+        lift(gesture)
+      } else {
+        gesture.timer = window.setTimeout(() => lift(gesture), ROUTINE_LONG_PRESS_MS)
+      }
     }
     const onPointerMove = event => {
       const gesture = gestureRef.current
@@ -320,16 +324,6 @@ export default function RoutineEdit() {
     edit(exercises => { reorderRoutineUnit(exercises, sourceIndex, targetSlot) })
   })
   if (!r) return null
-  const move = (i, dir) => {
-    // Guard before update so a stale/boundary activation cannot trigger persistence or cleanup.
-    if (!moveSupersetUnit(r.ex, i, dir)) return
-    edit(ex => {
-      const reordered = moveSupersetUnit(ex, i, dir)
-      if (!reordered) return
-      ex.splice(0, ex.length, ...reordered)
-      cleanupSg(ex)
-    })
-  }
   const toggleLink = i => edit(ex => {
     if (i < 1) return
     const cur = ex[i], prev = ex[i - 1]
@@ -339,7 +333,6 @@ export default function RoutineEdit() {
   })
 
   const units = supersetUnits(r.ex)
-  const unitIndex = new Map(units.flatMap((unit, index) => unit.map(i => [i, index])))
   const unitFirst = new Set(units.filter(u => u.length > 1).map(u => u[0]))
   const inSS = new Set(units.filter(u => u.length > 1).flat())
   const profile = activeProfile(S)
@@ -403,13 +396,7 @@ export default function RoutineEdit() {
           <div className="grow"><div className="tt capitalize">{exerciseNameFor(ex)}</div><div className="ss">{exLine(e, S.unit)}</div>
             {e.note && <div className="small dim" style={{ marginTop: 2 }}>{e.note}</div>}</div>
           {noEquip && <span className="tag" style={{ color: 'var(--orange)', borderColor: 'var(--orange)' }} title={t('Needs {0} — not in your active profile', t(ex.eq))}><Icon name="warning" /></span>}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 'none', alignItems: 'center' }}>
-            {i > 0 && <button className={'iconbtn' + (linkedPrev ? ' on-ss' : '')} title={t('Superset with exercise above')} style={{ width: 32, height: 28, borderRadius: 8, fontSize: 15 }} onClick={ev => { ev.stopPropagation(); toggleLink(i) }}><Icon name="link" /></button>}
-            <div style={{ display: 'flex', gap: 2 }}>
-              <button className="iconbtn" aria-label={t('Move up')} title={t('Move up')} disabled={unitIndex.get(i) === 0} style={{ width: 28, height: 24, borderRadius: 7, fontSize: 12 }} onClick={ev => { ev.stopPropagation(); move(i, -1) }}><Icon name="chevronUp" /></button>
-              <button className="iconbtn" aria-label={t('Move down')} title={t('Move down')} disabled={unitIndex.get(i) === units.length - 1} style={{ width: 28, height: 24, borderRadius: 7, fontSize: 12 }} onClick={ev => { ev.stopPropagation(); move(i, 1) }}><Icon name="chevronDown" /></button>
-            </div>
-          </div>
+          {i > 0 && <button className={'iconbtn' + (linkedPrev ? ' on-ss' : '')} title={t('Superset with exercise above')} style={{ width: 32, height: 28, borderRadius: 8, fontSize: 15, flex: 'none' }} onClick={ev => { ev.stopPropagation(); toggleLink(i) }}><Icon name="link" /></button>}
         </SwipeToDelete>
       </div>
     })}{reorder.drag && <div className="routine-drop-indicator" data-testid="routine-drop-indicator"
