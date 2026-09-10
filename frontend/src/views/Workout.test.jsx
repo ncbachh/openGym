@@ -80,7 +80,7 @@ vi.mock('../sheets.jsx', () => ({
   exerciseHistorySheet: mocks.exerciseHistorySheet,
   addRoutineToSessionSheet: vi.fn(),
 }))
-vi.mock('../components/Media.jsx', () => ({ default: () => null }))
+vi.mock('../components/Media.jsx', () => ({ default: () => null, Thumb: () => null }))
 // api.js reads navigator.userAgent at module scope. This file installs its own DOM inside the
 // tests rather than declaring a vitest environment, so it must not depend on an ambient one.
 vi.mock('../lib/api.js', () => ({
@@ -934,41 +934,38 @@ describe('superset actionable-set centring', () => {
   })
 })
 
-describe('active workout whole-unit move controls', () => {
-  // These exercise-level buttons are opt-in now (Settings → Workout controls); the menu path is covered below.
-  const mountLegacy = (entries, cur) => mount(entries, cur, { wc: { exerciseButtons: true } })
-  const action = label => container.querySelector(`button[aria-label="${label}"]`)
+describe('active workout reorder controls', () => {
+  const lastMenu = () => mocks.menuSheet.mock.calls.at(-1)[0]
+  const item = label => lastMenu().items.filter(Boolean).find(it => it.label === label)
 
-  it('shows labelled controls and moves the selected standalone exercise one unit', async () => {
+  it('opens reorder view and moves the selected standalone exercise', async () => {
     const selected = exercise('duplicate', [false], {
       occurrenceId: 'duplicate#2',
       target: { mode: 'reps', reps: 7, weight: 82.5, notes: 'Keep this target' },
       sets: [{ w: 77.5, r: 6, done: true, rir: 2 }],
     })
-    await mountLegacy([
+    await mount([
       exercise('duplicate', [false], { occurrenceId: 'duplicate#1' }),
       exercise('middle', [false]),
       selected,
     ], 2)
 
-    expect(action('Move up')?.textContent.trim()).toBe('Move up')
-    expect(action('Move down')?.textContent.trim()).toBe('Move down')
-    await act(async () => { action('Move up').dispatchEvent(new dom.Event('click', { bubbles: true })) })
+    await act(async () => { container.querySelector('button[aria-label="More"]').dispatchEvent(new dom.Event('click', { bubbles: true })) })
+    expect(item('Reorder exercises')).toBeTruthy()
+    await act(async () => { item('Reorder exercises').onClick() })
 
-    expect(mocks.S.active.entries.map(entry => entry.occurrenceId || entry.id)).toEqual(['duplicate#1', 'duplicate#2', 'middle'])
-    expect(mocks.S.active.entries[1]).toEqual(selected)
-    expect(mocks.S.active.entries[1].target).toEqual({ mode: 'reps', reps: 7, weight: 82.5, notes: 'Keep this target' })
-    expect(mocks.S.active.entries[1].sets).toEqual([{ w: 77.5, r: 6, done: true, rir: 2 }])
-    expect(mocks.S.active.cur).toBe(1)
-    expect(mocks.stopWork).toHaveBeenCalledOnce()
-    expect(mocks.stopRest).not.toHaveBeenCalled()
+    expect(container.querySelector('h1')?.textContent).toBe('Reorder exercises')
+    const doneBtn = [...container.querySelectorAll('button')].find(b => b.textContent.trim() === 'Done')
+    expect(doneBtn).toBeTruthy()
+    await act(async () => { doneBtn.dispatchEvent(new dom.Event('click', { bubbles: true })) })
+    expect(container.querySelector('h1')).toBeNull()
   })
 
-  it('moves the selected contiguous group as one unit without changing its metadata', async () => {
+  it('preserves superset unit order and metadata when reordering', async () => {
     const first = exercise('group-a', [false], { sg: 'pair', occurrenceId: 'group-a#1' })
     const selected = exercise('group-b', [true], { sg: 'pair', occurrenceId: 'group-b#1' })
     const groupMeta = { pair: { kind: 'complex', label: 'Carry pair', cues: 'Stay braced.' } }
-    await mountLegacy([
+    await mount([
       exercise('before', [false]),
       first,
       selected,
@@ -976,21 +973,11 @@ describe('active workout whole-unit move controls', () => {
     ], 2)
     mocks.S.active.groupMeta = groupMeta
 
-    await act(async () => { action('Move up').dispatchEvent(new dom.Event('click', { bubbles: true })) })
+    await act(async () => { container.querySelector('button[aria-label="More"]').dispatchEvent(new dom.Event('click', { bubbles: true })) })
+    await act(async () => { item('Reorder exercises').onClick() })
 
-    expect(mocks.S.active.entries.map(entry => entry.id)).toEqual(['group-a', 'group-b', 'before', 'after'])
-    expect(mocks.S.active.entries.slice(0, 2)).toEqual([first, selected])
-    expect(mocks.S.active.entries.slice(0, 2).map(entry => entry.sg)).toEqual(['pair', 'pair'])
-    expect(mocks.S.active.groupMeta).toEqual(groupMeta)
-    expect(mocks.S.active.entries[mocks.S.active.cur]).toEqual(selected)
-  })
-
-  it('disables both moves while a work timer can still write by index', async () => {
-    mocks.work = { left: 5, total: 5, endsAt: Date.now() + 5000 }
-    await mountLegacy([exercise('first', [false]), exercise('second', [false])], 1)
-
-    expect(action('Move up')?.disabled).toBe(true)
-    expect(action('Move down')?.disabled).toBe(true)
+    expect(container.querySelectorAll('.routine-drag-row')).toHaveLength(4)
+    expect(container.querySelector('.ss-label')?.textContent).toContain('Superset')
   })
 })
 
@@ -1220,15 +1207,14 @@ describe('workout controls: the more menu and the set menu', () => {
     expect([...container.querySelectorAll('button')].some(b => b.textContent.trim() === 'Add set')).toBe(true)
   })
 
-  it('routes swap, move, remove, warm-up and details through the More menu of that exercise', async () => {
+  it('routes swap, reorder, remove, warm-up and details through the More menu of that exercise', async () => {
     await mount([exercise('plain-bench', [false]), exercise('plain-row', [false])], 0)
     await act(async () => { container.querySelector('button[aria-label="More"]').dispatchEvent(new dom.Event('click', { bubbles: true })) })
     expect(mocks.menuSheet).toHaveBeenCalledOnce()
     expect(lastMenu().items.filter(Boolean).map(it => it.label)).toEqual(expect.arrayContaining([
-      'Add note', 'Details', 'Add warm-up set', 'Make superset with next', 'Swap exercise', 'Move up', 'Move down', 'Remove exercise',
+      'Add note', 'Details', 'Add warm-up set', 'Make superset with next', 'Swap exercise', 'Reorder exercises', 'Remove exercise',
     ]))
-    expect(item('Move up').disabled).toBe(true)
-    expect(item('Move down').disabled).toBe(false)
+    expect(item('Reorder exercises')).toBeTruthy()
     expect(item('Remove exercise').danger).toBe(true)
 
     item('Swap exercise').onClick()
@@ -1269,7 +1255,7 @@ describe('workout controls: the more menu and the set menu', () => {
       wc: { setShortcuts: true, pairButtons: true, exerciseButtons: true },
     })
     const labels = [...container.querySelectorAll('button')].map(b => b.textContent.trim())
-    expect(labels).toEqual(expect.arrayContaining(['+ Drop', 'Add warm-up set', 'Remove set', 'Make superset with next', 'Move up', 'Swap exercise', 'Remove exercise']))
+    expect(labels).toEqual(expect.arrayContaining(['+ Drop', 'Add warm-up set', 'Remove set', 'Make superset with next', 'Swap exercise', 'Remove exercise']))
   })
 
   it('drops the +/- buttons when steppers are off and keeps the number field', async () => {

@@ -21,6 +21,8 @@ import { progressionGuidance } from '../lib/progression-copy.js'
 import { glyphOf } from '../lib/glyphs.js'
 import { isWarmupRow, isDropSet, isRestPauseSet, dropsOf, clustersOf, addDrop, addCluster, removeDropAt, removeClusterAt, setDropAt, setClusterAt, nextDropWeight, nextBurstReps, isSideSet, makeSideSet, setSideField, toggleSide, addSideDrop, removeSideDropAt, setSideDropAt, addSideCluster, removeSideClusterAt, setSideClusterAt } from '../lib/workout-model.js'
 import { canMoveActiveWorkoutUnit, moveActiveWorkoutUnit } from '../lib/active-workout-order.js'
+import ReorderView from '../components/ReorderView.jsx'
+import { reorderRoutineUnit } from './RoutineEdit.jsx'
 
 const SWIPE_MIN_DISTANCE = 48
 const SWIPE_AXIS_RATIO = 1.25
@@ -72,7 +74,7 @@ function Elapsed({ start }) {
 // drops everything that is not a set you are logging — media, tag chips, the note lines, the
 // "last time" recap and the progression line — leaving the name, the ⋯ menu and the sets.
 // Nothing dropped is lost: it is all still on the ⋯ menu, or one ⋮ switch back to list/cards.
-function ExerciseBlock({ entryIdx, compact, dense, onToggle, onToggleSide, onField, onAddSet, onRemoveSet, onAddWarmup, onRemoveSetAt, onStartTimed, onPairPrev, onPairNext, onSetRowRef, onProgressionSettings, onSwap, onMoveUp, onMoveDown, canMoveUp, canMoveDown, onRemoveExercise, busy }) {
+function ExerciseBlock({ entryIdx, compact, dense, onToggle, onToggleSide, onField, onAddSet, onRemoveSet, onAddWarmup, onRemoveSetAt, onStartTimed, onPairPrev, onPairNext, onSetRowRef, onProgressionSettings, onSwap, onReorder, onRemoveExercise, busy }) {
   const S = useStore(s => s.S)
   const update = useStore(s => s.update)
   const working = useUI(s => s.work)
@@ -216,8 +218,7 @@ function ExerciseBlock({ entryIdx, compact, dense, onToggle, onToggleSide, onFie
       onPairPrev && { icon: 'link', label: t('Make superset with previous'), onClick: onPairPrev },
       onPairNext && { icon: 'link', label: t('Make superset with next'), onClick: onPairNext },
       onSwap && { icon: 'shuffle', label: t('Swap exercise'), onClick: onSwap, disabled: busy },
-      onMoveUp && { icon: 'chevronUp', label: t('Move up'), onClick: onMoveUp, disabled: busy || !canMoveUp },
-      onMoveDown && { icon: 'chevronDown', label: t('Move down'), onClick: onMoveDown, disabled: busy || !canMoveDown },
+      onReorder && { icon: 'list', label: t('Reorder exercises'), onClick: onReorder, disabled: busy },
       onRemoveExercise && { icon: 'trash', label: t('Remove exercise'), onClick: onRemoveExercise, danger: true, disabled: busy },
     ],
   })
@@ -553,6 +554,7 @@ function ActiveWorkout() {
       if (!refs.size) setRefs.current.delete(entry)
     }
   }
+  const [isReordering, setIsReordering] = useState(false)
   const swipe = useRef(null)
   const progressHighWater = useRef(A.entries.map(e => e.sets.filter(s => s.done).length))
   // The marks are index-keyed, and removing an exercise shifts every index above it down
@@ -624,36 +626,36 @@ function ActiveWorkout() {
   })
   const onPairPrev = !isSuperset && cur > 0 ? () => pairAt(cur - 1, cur) : null
   const onPairNext = !isSuperset && cur < A.entries.length - 1 ? () => pairAt(cur, cur + 1) : null
-  const moveUnitAt = (at, direction) => {
+  const reorderActiveWorkout = (sourceIndex, targetSlot) => {
     const ui = useUI.getState()
     const active = useStore.getState().S.active
-    if (ui.work || !canMoveActiveWorkoutUnit(active, at, direction)) return
-    // Invalidate an old timed callback before indexes shift. A running rest is not cancelled:
-    // it belongs to an exercise (timer.forIdx), and that exercise only changes position.
+    if (!active || ui.work) return
+    const currentSelected = active.entries[active.cur]
+    const originalEntries = [...active.entries]
     ui.stopWork()
     update(s => {
-      const moved = moveActiveWorkoutUnit(s.active, at, direction)
-      if (!moved) return
-      progressHighWater.current = moved.indices.map(index => progressHighWater.current[index])
+      const ok = reorderRoutineUnit(s.active.entries, sourceIndex, targetSlot)
+      if (!ok) return
+      if (currentSelected) {
+        const newCur = s.active.entries.indexOf(currentSelected)
+        if (newCur >= 0) s.active.cur = newCur
+      }
+      progressHighWater.current = s.active.entries.map(e => e.sets.filter(set => set.done).length)
       const rest = useUI.getState().timer
       if (rest && rest.forIdx != null) {
-        const forIdx = moved.indices.indexOf(rest.forIdx)
-        if (forIdx >= 0) useUI.setState({ timer: { ...rest, forIdx } })
+        const restOwner = originalEntries[rest.forIdx]
+        const newForIdx = s.active.entries.indexOf(restOwner)
+        if (newForIdx >= 0) useUI.setState({ timer: { ...rest, forIdx: newForIdx } })
       }
     }, true)
   }
-
-  const moveCurrentUnit = direction => moveUnitAt(cur, direction)
 
   // One prop object per entry so the card and list layouts share the exact same wiring. The
   // exercise-level actions (swap, move, remove) address the entry itself, so the "more" menu of
   // a superset member acts on that member, not on whatever the marker happens to point at.
   const blockProps = idx => ({
     onSwap: () => swapActiveWorkoutExercise(idx),
-    onMoveUp: () => moveUnitAt(idx, -1),
-    onMoveDown: () => moveUnitAt(idx, 1),
-    canMoveUp: canMoveActiveWorkoutUnit(A, idx, -1),
-    canMoveDown: canMoveActiveWorkoutUnit(A, idx, 1),
+    onReorder: () => setIsReordering(true),
     onRemoveExercise: () => confirmRemoveExercise(idx),
     busy: !!work,
     onToggle: i => toggle(idx, i),
@@ -928,6 +930,17 @@ function ActiveWorkout() {
     }
   }, [])
 
+  if (isReordering) {
+    return (
+      <ReorderView
+        title={t('Reorder exercises')}
+        entries={A.entries}
+        onReorder={reorderActiveWorkout}
+        onDone={() => setIsReordering(false)}
+      />
+    )
+  }
+
   return <div className="narrow">
     {/* In list mode the whole session scrolls under the header, so the header (name, clock,
         set counter, discard/finish, progress) stays pinned — the one thing you want in view
@@ -1053,13 +1066,6 @@ function ActiveWorkout() {
       else exConfigSheet(ex, null, commit, null, routine, seed)
     })} icon="plus">{t('Add exercise')}</Button>
     {wc.exerciseButtons && A.entries.length > 0 && <>
-      <div style={{ height: 6 }} />
-      <div className="row">
-        <Button size="sm" icon="chevronUp" aria-label={t('Move up')}
-          disabled={!!work || !canMoveActiveWorkoutUnit(A, cur, -1)} onClick={() => moveCurrentUnit(-1)}>{t('Move up')}</Button>
-        <Button size="sm" trailingIcon="chevronDown" aria-label={t('Move down')}
-          disabled={!!work || !canMoveActiveWorkoutUnit(A, cur, 1)} onClick={() => moveCurrentUnit(1)}>{t('Move down')}</Button>
-      </div>
       <div style={{ height: 6 }} />
       <div style={{ display: 'flex', justifyContent: 'center' }}>
         <Button size="sm" icon="shuffle" aria-label={t('Swap exercise')} disabled={!!work}

@@ -253,14 +253,12 @@ describe('routine long-press reorder', () => {
     }
   })
 
-  it('ignores non-primary/control pointers and leaves accessible move buttons working', () => {
+  it('ignores non-primary/control pointers and leaves nested buttons working', () => {
     const layout = mount([configured('a'), configured('b')])
-    const down = host.querySelector('button[aria-label="Move down"]')
-    pointer(down, 'pointerdown', { y: layout.centers[0] })
+    const link = rows()[1].querySelector('button[title]')
+    pointer(link, 'pointerdown', { y: layout.centers[1] })
     act(() => vi.advanceTimersByTime(380))
     expect(host.querySelector('.is-dragging')).toBeNull()
-    act(() => down.click())
-    expect(exercises().map(e => e.id)).toEqual(['b', 'a'])
     const item = rows()[0].querySelector('.item')
     pointer(item, 'pointerdown', { primary: false, y: layout.centers[0] })
     act(() => vi.advanceTimersByTime(380))
@@ -397,19 +395,13 @@ describe('routine long-press reorder', () => {
     expect(host.querySelector('.is-dragging')).toBeNull()
   })
 
-  it('never owns nested link, Move up, or Move down controls', () => {
+  it('never owns nested link controls', () => {
     const layout = mount([configured('a'), configured('b')])
-    const controls = [
-      rows()[1].querySelector('button[title]'),
-      rows()[1].querySelector('button[aria-label="Move up"]'),
-      rows()[1].querySelector('button[aria-label="Move down"]'),
-    ]
-    for (const control of controls) {
-      pointer(control, 'pointerdown', { y: layout.centers[1] })
-      act(() => vi.advanceTimersByTime(ROUTINE_LONG_PRESS_MS))
-      expect(host.querySelector('.is-dragging')).toBeNull()
-      pointer(control, 'pointerup', { y: layout.centers[1] })
-    }
+    const control = rows()[1].querySelector('button[title]')
+    pointer(control, 'pointerdown', { y: layout.centers[1] })
+    act(() => vi.advanceTimersByTime(ROUTINE_LONG_PRESS_MS))
+    expect(host.querySelector('.is-dragging')).toBeNull()
+    pointer(control, 'pointerup', { y: layout.centers[1] })
   })
 
   it('falls back to page/window autoscroll without a nested scroll host', () => {
