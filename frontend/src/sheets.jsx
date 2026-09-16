@@ -944,7 +944,10 @@ function ExercisePicker({ onPick, close }) {
 
   return <>
     <div className="row between" style={{ marginBottom: 10 }}><h3>{t('Add exercise')}</h3>
-      <Button size="sm" variant="tinted" icon="target" onClick={() => setByMuscle(true)}>{t('By muscle')}</Button>
+      <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+        <button className="iconbtn" onClick={() => setByMuscle(true)} aria-label={t('By muscle')} title={t('By muscle')}><Icon name="target" /></button>
+        <Button size="sm" variant="plain" onClick={() => customExSheet(null, ex => onPick(ex), q.trim())} style={{ fontWeight: 600, fontSize: 16 }}>{t('Create')}</Button>
+      </div>
     </div>
     {/* .picker-search is what index.css keys the keyboard-aware sheet layout on: the sheet
         lifts above the keys and the search stays put while the list scrolls under it. */}
@@ -976,10 +979,6 @@ function ExercisePicker({ onPick, close }) {
       </button>
     </div>
     <div className="list">
-      <div className="item" {...tappable(() => customExSheet(null, ex => onPick(ex), q.trim()))}>
-        <div className="thumb thumb-x"><Icon name="sparkles" /></div>
-        <div className="grow"><div className="tt">{t('Create your own exercise')}</div><div className="ss">{t('name + body part, no animation')}</div></div><Icon name="plus" className="chev" />
-      </div>
       {f.slice(0, shown).map(e => <div key={e.id} className="item" {...tappable(() => onPick(e))}>
         <Thumb ex={e} /><div className="grow"><div className="tt capitalize">{isFav(st, e.id) && <Icon name="starFill" className="fav-star" />}{exerciseNameFor(e)}</div><div className="ss capitalize">{t(e.tg || e.bp)} · {t(e.eq)}</div></div>
         {usage[e.id] && <span className="tag acc"><Icon name="starFill" /></span>}

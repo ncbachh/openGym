@@ -64,18 +64,18 @@ describe('exercise detail star', () => {
 
 describe('exercise picker', () => {
   it('lists favourites first and marks them, keeping the rest in catalogue order', () => {
-    const plain = names((exercisePicker(vi.fn()), renderTop())).slice(1)   // drop "Create your own"
+    const plain = names((exercisePicker(vi.fn()), renderTop()))
     useUI.setState({ sheets: [] })
     const fav = [plain[7], plain[3]]
     const favIds = fav.map(n => EXDB.find(e => e.n === n).id)
     useStore.setState(s => ({ S: { ...s.S, favEx: favIds } }))
     exercisePicker(vi.fn())
     const host = renderTop()
-    const shown = names(host).slice(1)
+    const shown = names(host)
     // Favourites keep the list's own order among themselves — not the order they were starred in.
     expect(shown.slice(0, 2)).toEqual(plain.filter(n => fav.includes(n)))
     expect(shown.slice(2)).toEqual(plain.filter(n => !fav.includes(n)))
-    const rows = [...host.querySelectorAll('.item')].slice(1)
+    const rows = [...host.querySelectorAll('.item')]
     expect(rows.slice(0, 2).every(r => r.querySelector('.tt .fav-star'))).toBe(true)
     expect(rows[2].querySelector('.tt .fav-star')).toBeNull()
   })
@@ -88,7 +88,7 @@ describe('exercise picker', () => {
     useStore.setState(s => ({ S: { ...s.S, favEx: favExercises.map(e => e.id) } }))
     exercisePicker(vi.fn())
     host = renderTop()
-    const shown = names(host).slice(1)
+    const shown = names(host)
     expect(shown[0]).toBe(favExercises[0].n)
     expect(shown[1]).toBe(favExercises[1].n)
   })
